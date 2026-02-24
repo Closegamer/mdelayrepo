@@ -11,7 +11,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Здравствуйте! Вас приветствует бот mDelay! \nЕсли Вы собираетесь в опасное путешествие, Вы можете оставить сообщение, которое поможет Вас найти в случае непредвиденной ситуации и при отсутствии у Вас связи. \nКакое сообщение, кому и когда - решаете Вы. \nВы всегда сможете удалить свои сообщения, изменить даты отправки, изменить адресатов.")
+    user = update.effective_user
+    first_name = user.first_name or "<Ваше имя не распознано>"
+    username = user.username or "<ник не распознан>"
+    language_code = user.language_code or ""
+
+    await update.message.reply_text(f"Здравствуйте, {first_name}! Вас приветствует бот mDelay!\n\n"
+                                    f"Если Вы собираетесь в опасное путешествие или в подозрительное место, Вы можете оставить сообщение, которое поможет Вас найти в случае непредвиденной ситуации и при отсутствии у Вас связи. \n\n"
+                                    f"Какое сообщение, кому и когда - решаете Вы. \n\n"
+                                    f"Вы всегда сможете удалить свои сообщения, изменить даты отправки, изменить адресатов.\n\n"
+                                    f"Удачи Вам! Не теряйтесь - кому-то может быть без Вас грустно.")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
