@@ -35,32 +35,39 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
 
-async def start_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
 
-    user = query.from_user
-    first_name = user.first_name or ""
-    last_name = user.last_name or ""
-    username = user.username or ""
-    language_code = user.language_code or ""
+    data = query.data
+    logger.info("callback data: %s", data)
 
-async def read_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
+    if data == "read_messages":
+        await query.edit_message_text(
+            "Ваши сообщения:\n\n"
+            "Список из базы..."
+        )
+        return
 
-    await query.edit_message_text(f"Ваши сообщения: \n\n"
-                                  f""
-                                  f"Список из базы...")
+    if data == "write_message":
+        context.user_data[STATE_WAITING_MESSAGE] = True
+        context.user_data.pop(DRAFT_MESSAGE_TEXT, None)
+        await query.edit_message_text("Введите текст одним сообщением.")
+        return
 
-async def write_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
+    if data == "set_when":
+        await query.edit_message_text(
+            "Выбор времени отправки."
+        )
+        return
 
-    context.user_data[STATE_WAITING_MESSAGE] = True
-    context.user_data.pop(DRAFT_MESSAGE_TEXT, None)
+    if data == "set_who":
+        await query.edit_message_text(
+            "Выбор получателя."
+        )
+        return
 
-    await query.edit_message_text("Введите текст сообщения одним сообщением.")
+    await query.edit_message_text(f"Неизвестная кнопка: {data}")
 
 async def receive_message_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.user_data.get(STATE_WAITING_MESSAGE):
@@ -112,10 +119,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
 
-    app.add_handler(CallbackQueryHandler(read_messages, pattern=r"^read_messages$"))
-    app.add_handler(CallbackQueryHandler(write_message, pattern=r"^write_message$"))
-    app.add_handler(CallbackQueryHandler(set_when, pattern=r"^set_when$"))
-    app.add_handler(CallbackQueryHandler(set_who, pattern=r"^set_who$"))
+    app.add_handler(CallbackQueryHandler(on_button))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_message_text))
 
