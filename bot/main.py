@@ -16,7 +16,6 @@ STATE_WAIT_MESSAGE_TEXT = "wait_message_text"
 STATE_WAIT_RECIPIENT_PICK = "wait_recipient_pick"
 STATE_WAIT_WHEN = "wait_when"
 STATE_WAIT_ADD_USERNAME = "wait_add_username"
-STATE_WAIT_ADD_EMAIL = "wait_add_email"
 
 DRAFT_MESSAGE_TEXT = "draft_message_text"
 DRAFT_RECIPIENTS_SELECTED = "draft_recipients_selected"
@@ -24,12 +23,11 @@ DRAFT_WHEN = "draft_when"
 RECIPIENTS_BOOK = "recipients_book"
 
 USERNAME_RE = re.compile(r"^@[A-Za-z0-9_]{5,32}$")
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 HARD_RECIPIENTS = [
-    {"name": "Мама", "telegram": "@mama_example", "email": "mama@example.com"},
-    {"name": "Папа", "telegram": "@papa_example", "email": "papa@example.com"},
-    {"name": "Брат", "telegram": "@brother_example", "email": "brother@example.com"},
+    {"name": "Мама", "telegram": "@mama_example"},
+    {"name": "Папа", "telegram": "@papa_example"},
+    {"name": "Брат", "telegram": "@brother_example"},
 ]
 
 def ensure_defaults(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -54,7 +52,6 @@ def add_recipient_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             ["Добавить @username"],
-            ["Добавить email"],
             ["Назад в главное меню"],
         ],
         resize_keyboard=True,
@@ -81,8 +78,7 @@ def flow_keyboard() -> ReplyKeyboardMarkup:
 
 def recipient_to_str(item: dict) -> str:
     tg = item.get("telegram") or "-"
-    email = item.get("email") or "-"
-    return f"{item['name']} (TG: {tg}, Email: {email})"
+    return f"{item['name']} (TG: {tg})"
 
 def merged_recipients(context: ContextTypes.DEFAULT_TYPE) -> list[dict]:
     dynamic_list = context.user_data.get(RECIPIENTS_BOOK, [])
@@ -98,14 +94,12 @@ def selected_to_lines(values: list[str]) -> str:
         return "- (пусто)"
     return "\n".join([f"- {x}" for x in values])
 
-def add_dynamic_recipient(context: ContextTypes.DEFAULT_TYPE, name: str, telegram_value: str, email_value: str) -> bool:
+def add_dynamic_recipient(context: ContextTypes.DEFAULT_TYPE, name: str, telegram_value: str) -> bool:
     dynamic_list = context.user_data.get(RECIPIENTS_BOOK, [])
     for item in dynamic_list:
         if item.get("telegram") == telegram_value and telegram_value:
             return False
-        if item.get("email") == email_value and email_value:
-            return False
-    dynamic_list.append({"name": name, "telegram": telegram_value, "email": email_value})
+    dynamic_list.append({"name": name, "telegram": telegram_value})
     context.user_data[RECIPIENTS_BOOK] = dynamic_list
     return True
 
@@ -163,13 +157,6 @@ async def handle_idle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=flow_keyboard(),
         )
         return True
-    if text == "Добавить email":
-        context.user_data[STATE] = STATE_WAIT_ADD_EMAIL
-        await update.message.reply_text(
-            "Введите email, например: user@example.com",
-            reply_markup=flow_keyboard(),
-        )
-        return True
     if text == "Написать сообщение":
         context.user_data[STATE] = STATE_WAIT_MESSAGE_TEXT
         context.user_data.pop(DRAFT_MESSAGE_TEXT, None)
@@ -205,23 +192,9 @@ async def handle_wait_add_username(update: Update, context: ContextTypes.DEFAULT
     if not USERNAME_RE.match(value):
         await update.message.reply_text("Некорректный @username. Пример: @example_user")
         return
-    ok = add_dynamic_recipient(context, value, value, "")
+    ok = add_dynamic_recipient(context, value, value)
     if not ok:
         await update.message.reply_text("Такой @username уже есть в списке.", reply_markup=add_recipient_keyboard())
-        context.user_data[STATE] = STATE_IDLE
-        return
-    context.user_data[STATE] = STATE_IDLE
-    await update.message.reply_text(f"Адресат добавлен: {value}", reply_markup=add_recipient_keyboard())
-
-async def handle_wait_add_email(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
-    value = text.strip().lower()
-    if not EMAIL_RE.match(value):
-        await update.message.reply_text("Некорректный email. Пример: user@example.com")
-        return
-    name = value.split("@")[0]
-    ok = add_dynamic_recipient(context, name, "", value)
-    if not ok:
-        await update.message.reply_text("Такой email уже есть в списке.", reply_markup=add_recipient_keyboard())
         context.user_data[STATE] = STATE_IDLE
         return
     context.user_data[STATE] = STATE_IDLE
@@ -291,9 +264,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     state = context.user_data.get(STATE, STATE_IDLE)
     if state == STATE_WAIT_ADD_USERNAME:
         await handle_wait_add_username(update, context, text)
-        return
-    if state == STATE_WAIT_ADD_EMAIL:
-        await handle_wait_add_email(update, context, text)
         return
     if state == STATE_WAIT_MESSAGE_TEXT:
         await handle_wait_message_text(update, context, text)
