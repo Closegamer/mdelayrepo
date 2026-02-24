@@ -1,6 +1,6 @@
 import os
 import logging
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 logging.basicConfig(
@@ -14,27 +14,31 @@ STATE_IDLE = "idle"
 STATE_WAIT_MESSAGE_TEXT = "wait_message_text"
 STATE_WAIT_RECIPIENT_PICK = "wait_recipient_pick"
 STATE_WAIT_WHEN = "wait_when"
+
 DRAFT_MESSAGE_TEXT = "draft_message_text"
 DRAFT_RECIPIENTS_SELECTED = "draft_recipients_selected"
 DRAFT_WHEN = "draft_when"
+
+RECIPIENTS_BOOK = "recipients_book"
 
 HARD_RECIPIENTS = [
     {"name": "Мама", "telegram": "@mama_example", "email": "mama@example.com"},
     {"name": "Папа", "telegram": "@papa_example", "email": "papa@example.com"},
     {"name": "Брат", "telegram": "@brother_example", "email": "brother@example.com"},
-    {"name": "Друг Илья", "telegram": "@ilya_example", "email": "ilya@example.com"},
-    {"name": "Друг Анна", "telegram": "@anna_example", "email": "anna@example.com"},
 ]
 
 def ensure_defaults(context: ContextTypes.DEFAULT_TYPE) -> None:
     if STATE not in context.user_data:
         context.user_data[STATE] = STATE_IDLE
+    if RECIPIENTS_BOOK not in context.user_data:
+        context.user_data[RECIPIENTS_BOOK] = []
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             ["Написать сообщение"],
-            ["Показать тестовых адресатов"],
+            ["Показать адресатов"],
+            ["Добавить контакт из Telegram"],
             ["Прочитать сообщения"],
         ],
         resize_keyboard=True,
@@ -44,8 +48,8 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
 def draft_choice_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            ["Отправить всем тестовым адресатам"],
-            ["Выбрать тестовых адресатов"],
+            ["Отправить всем адресатам"],
+            ["Выбрать адресатов"],
             ["Назад в главное меню"],
         ],
         resize_keyboard=True,
@@ -59,10 +63,28 @@ def flow_keyboard() -> ReplyKeyboardMarkup:
         one_time_keyboard=False,
     )
 
+def contact_request_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("Поделиться контактом", request_contact=True)],
+            ["Назад в главное меню"],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+    )
+
 def recipient_to_str(item: dict) -> str:
-    return f"{item['name']} (TG: {item['telegram']}, Email: {item['email']})"
+    tg = item.get("telegram") or "-"
+    email = item.get("email") or "-"
+    return f"{item['name']} (TG: {tg}, Email: {email})"
+
+def merged_recipients(context: ContextTypes.DEFAULT_TYPE) -> list[dict]:
+    dynamic_list = context.user_data.get(RECIPIENTS_BOOK, [])
+    return HARD_RECIPIENTS + dynamic_list
 
 def format_recipients(book: list[dict]) -> str:
+    if not book:
+        return "Список адресатов пуст."
     return "\n".join([f"{idx}. {recipient_to_str(item)}" for idx, item in enumerate(book, start=1)])
 
 def selected_to_lines(values: list[str]) -> str:
@@ -94,6 +116,39 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
 
+async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    ensure_defaults(context)
+    contact = update.message.contact
+    if not contact:
+        await update.message.reply_text("Контакт не получен.", reply_markup=main_menu_keyboard())
+        return
+
+    name = contact.first_name or "Без имени"
+    phone = contact.phone_number or ""
+    telegram_value = f"contact:{phone}" if phone else ""
+    email_value = ""
+
+    dynamic_list = context.user_data.get(RECIPIENTS_BOOK, [])
+
+    for item in dynamic_list:
+        if item.get("name") == name and item.get("telegram") == telegram_value:
+            await update.message.reply_text("Этот контакт уже добавлен.", reply_markup=main_menu_keyboard())
+            return
+
+    dynamic_list.append(
+        {
+            "name": name,
+            "telegram": telegram_value,
+            "email": email_value,
+        }
+    )
+    context.user_data[RECIPIENTS_BOOK] = dynamic_list
+
+    await update.message.reply_text(
+        f"Контакт добавлен: {name}",
+        reply_markup=main_menu_keyboard(),
+    )
+
 async def handle_idle_command(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     if text == "Назад в главное меню":
         context.user_data[STATE] = STATE_IDLE
@@ -107,9 +162,17 @@ async def handle_idle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return True
 
-    if text == "Показать тестовых адресатов":
+    if text == "Добавить контакт из Telegram":
         await update.message.reply_text(
-            "Тестовые адресаты:\n\n" + format_recipients(HARD_RECIPIENTS),
+            "Нажмите кнопку ниже, чтобы поделиться контактом.",
+            reply_markup=contact_request_keyboard(),
+        )
+        return True
+
+    if text == "Показать адресатов":
+        book = merged_recipients(context)
+        await update.message.reply_text(
+            "Список адресатов:\n\n" + format_recipients(book),
             reply_markup=main_menu_keyboard(),
         )
         return True
@@ -125,23 +188,24 @@ async def handle_idle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return True
 
-    if text == "Отправить всем тестовым адресатам":
-        selected = [recipient_to_str(x) for x in HARD_RECIPIENTS]
+    if text == "Отправить всем адресатам":
+        book = merged_recipients(context)
+        selected = [recipient_to_str(x) for x in book]
         context.user_data[DRAFT_RECIPIENTS_SELECTED] = selected
         context.user_data[STATE] = STATE_WAIT_WHEN
         await update.message.reply_text(
-            "Выбраны все тестовые адресаты.\nВведите, когда отправить сообщение.",
+            "Выбраны все адресаты.\nВведите, когда отправить сообщение.",
             reply_markup=flow_keyboard(),
         )
         return True
 
-    if text == "Выбрать тестовых адресатов":
-        context.user_data[STATE] = STATE_WAIT_RECIPIENT_PICK
+    if text == "Выбрать адресатов":
+        book = merged_recipients(context)
         await update.message.reply_text(
-            "Введите номера адресатов через запятую, например: 1,3,5\n\n"
-            + format_recipients(HARD_RECIPIENTS),
+            "Введите номера адресатов через запятую, например: 1,3,5\n\n" + format_recipients(book),
             reply_markup=flow_keyboard(),
         )
+        context.user_data[STATE] = STATE_WAIT_RECIPIENT_PICK
         return True
 
     return False
@@ -165,13 +229,15 @@ async def handle_wait_recipient_pick(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("Введите номера через запятую, например: 1,2")
         return
 
+    book = merged_recipients(context)
+
     selected = []
     for token in raw:
         idx = int(token) - 1
-        if idx < 0 or idx >= len(HARD_RECIPIENTS):
+        if idx < 0 or idx >= len(book):
             await update.message.reply_text(f"Некорректный номер: {token}")
             return
-        value = recipient_to_str(HARD_RECIPIENTS[idx])
+        value = recipient_to_str(book[idx])
         if value not in selected:
             selected.append(value)
 
@@ -239,9 +305,9 @@ def main() -> None:
         raise RuntimeError("BOT_TOKEN is not set")
 
     app = Application.builder().token(token).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
+    app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     logger.info("Bot is starting polling...")
