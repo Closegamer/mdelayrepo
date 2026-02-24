@@ -1,13 +1,12 @@
 import os
 import logging
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    CallbackQueryHandler,
     filters,
 )
 
@@ -21,16 +20,26 @@ logger = logging.getLogger(__name__)
 STATE_WAITING_MESSAGE = "waiting_message"
 DRAFT_MESSAGE_TEXT = "draft_message_text"
 
+def main_menu_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [["Прочитать сообщения"], ["Написать сообщение"]],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+    )
+
+def draft_menu_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [["Когда отправить"], ["Кому отправить"], ["В главное меню"]],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+    )
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     first_name = user.first_name or "<Ваше имя не распознано>"
 
-    keyboard = InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Прочитать сообщения", callback_data="read_messages")],
-            [InlineKeyboardButton("Написать сообщение", callback_data="write_message")],
-        ]
-    )
+    context.user_data[STATE_WAITING_MESSAGE] = False
+    context.user_data.pop(DRAFT_MESSAGE_TEXT, None)
 
     await update.message.reply_text(
         f"Здравствуйте, {first_name}! Вас приветствует бот mDelay!\n\n"
@@ -41,79 +50,72 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Вы всегда сможете удалить свои сообщения, изменить даты отправки, "
         f"изменить адресатов.\n\n"
         f"Удачи Вам! Не теряйтесь - кому-то может быть без Вас грустно.\n\n",
-        reply_markup=keyboard,
+        reply_markup=main_menu_keyboard(),
     )
-
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
 
-async def show_read_messages(target_message_edit) -> None:
-    await target_message_edit("Ваши сообщения:\n\nСписок из базы...")
-
-async def show_write_message_prompt(context: ContextTypes.DEFAULT_TYPE, target_message_edit) -> None:
-    context.user_data[STATE_WAITING_MESSAGE] = True
-    context.user_data.pop(DRAFT_MESSAGE_TEXT, None)
-    await target_message_edit("Введите текст одним сообщением.")
-
-async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data
-    logger.info("callback data: %s", data)
-
-    if data == "read_messages":
-        await show_read_messages(query.edit_message_text)
-        return
-
-    if data == "write_message":
-        await show_write_message_prompt(context, query.edit_message_text)
-        return
-
-    if data == "set_when":
-        await query.edit_message_text(
-            "Здесь будет настройка даты и времени отправки."
-        )
-        return
-
-    if data == "set_who":
-        await query.edit_message_text(
-            "Здесь будет выбор получателя."
-        )
-        return
-
-    await query.edit_message_text(f"Неизвестная кнопка: {data}")
-
-async def read_messages_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await show_read_messages(update.message.reply_text)
-
-
-async def write_message_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await show_write_message_prompt(context, update.message.reply_text)
-
-async def receive_message_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.user_data.get(STATE_WAITING_MESSAGE):
-        return
-
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
-    if not text:
-        await update.message.reply_text("Пустой текст. Напишите сообщение ещё раз.")
+
+    if text == "Прочитать сообщения":
+        await update.message.reply_text(
+            "Ваши сообщения:\n\nСписок из базы...",
+            reply_markup=main_menu_keyboard(),
+        )
         return
 
-    context.user_data[DRAFT_MESSAGE_TEXT] = text
-    context.user_data[STATE_WAITING_MESSAGE] = False
+    if text == "Написать сообщение":
+        context.user_data[STATE_WAITING_MESSAGE] = True
+        context.user_data.pop(DRAFT_MESSAGE_TEXT, None)
+        await update.message.reply_text(
+            "Введите текст сообщения одним сообщением.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
 
-    keyboard = InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Когда отправить", callback_data="set_when")],
-            [InlineKeyboardButton("Кому отправить", callback_data="set_who")],
-        ]
-    )
+    if text == "Когда отправить":
+        await update.message.reply_text(
+            "Здесь будет настройка даты и времени отправки.",
+            reply_markup=draft_menu_keyboard(),
+        )
+        return
 
+    if text == "Кому отправить":
+        await update.message.reply_text(
+            "Здесь будет выбор получателя.",
+            reply_markup=draft_menu_keyboard(),
+        )
+        return
+
+    if text == "В главное меню":
+        context.user_data[STATE_WAITING_MESSAGE] = False
+        await update.message.reply_text(
+            "Главное меню:",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    # Если ожидаем текст сообщения, сохраняем черновик
+    if context.user_data.get(STATE_WAITING_MESSAGE):
+        if not text:
+            await update.message.reply_text("Пустой текст. Напишите сообщение ещё раз.")
+            return
+
+        context.user_data[DRAFT_MESSAGE_TEXT] = text
+        context.user_data[STATE_WAITING_MESSAGE] = False
+
+        await update.message.reply_text(
+            f"Сообщение сохранено:\n\n{text}\n\nВыберите следующий шаг:",
+            reply_markup=draft_menu_keyboard(),
+        )
+        return
+
+    # Текст вне сценария
     await update.message.reply_text(
-        f"Сообщение сохранено:\n\n{text}\n\nВыберите следующий шаг:",
-        reply_markup=keyboard,
+        "Используйте кнопки меню ниже.",
+        reply_markup=main_menu_keyboard(),
     )
 
 def main() -> None:
@@ -125,13 +127,7 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
-
-    app.add_handler(CallbackQueryHandler(on_button))
-
-    app.add_handler(MessageHandler(filters.Regex(r"^Прочитать сообщения$"), read_messages_text))
-    app.add_handler(MessageHandler(filters.Regex(r"^Написать сообщение$"), write_message_text))
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_message_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     logger.info("Bot is starting polling...")
     app.run_polling(drop_pending_updates=True)
