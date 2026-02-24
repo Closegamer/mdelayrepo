@@ -1,17 +1,26 @@
 import os
 import logging
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (Application, CommandHandler, MessageHandler, ContextTypes, CallbackQueryHandler, filters)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    CallbackQueryHandler,
+    filters,
+)
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    level=logging.INFO
+    level=logging.INFO,
 )
 
 logger = logging.getLogger(__name__)
 
 STATE_WAITING_MESSAGE = "waiting_message"
 DRAFT_MESSAGE_TEXT = "draft_message_text"
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -24,16 +33,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ]
     )
 
-    await update.message.reply_text(f"Здравствуйте, {first_name}! Вас приветствует бот mDelay!\n\n"
-                                    f"Если Вы собираетесь в опасное путешествие или в подозрительное место, Вы можете оставить сообщение, которое поможет Вас найти в случае непредвиденной ситуации и при отсутствии у Вас связи. \n\n"
-                                    f"Какое сообщение, кому и когда - решаете Вы. \n\n"
-                                    f"Вы всегда сможете удалить свои сообщения, изменить даты отправки, изменить адресатов.\n\n"
-                                    f"Удачи Вам! Не теряйтесь - кому-то может быть без Вас грустно.\n\n",
-                                    reply_markup=keyboard,
-                                    )
+    await update.message.reply_text(
+        f"Здравствуйте, {first_name}! Вас приветствует бот mDelay!\n\n"
+        f"Если Вы собираетесь в опасное путешествие или в подозрительное место, "
+        f"Вы можете оставить сообщение, которое поможет Вас найти в случае "
+        f"непредвиденной ситуации и при отсутствии у Вас связи.\n\n"
+        f"Какое сообщение, кому и когда - решаете Вы.\n\n"
+        f"Вы всегда сможете удалить свои сообщения, изменить даты отправки, "
+        f"изменить адресатов.\n\n"
+        f"Удачи Вам! Не теряйтесь - кому-то может быть без Вас грустно.\n\n",
+        reply_markup=keyboard,
+    )
+
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
+
 
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -57,17 +72,18 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if data == "set_when":
         await query.edit_message_text(
-            "Выбор времени отправки."
+            "Здесь будет настройка даты и времени отправки."
         )
         return
 
     if data == "set_who":
         await query.edit_message_text(
-            "Выбор получателя."
+            "Здесь будет выбор получателя."
         )
         return
 
     await query.edit_message_text(f"Неизвестная кнопка: {data}")
+
 
 async def receive_message_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.user_data.get(STATE_WAITING_MESSAGE):
@@ -93,21 +109,6 @@ async def receive_message_text(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=keyboard,
     )
 
-async def set_when(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    await query.edit_message_text(
-        "Здесь будет настройка даты и времени отправки."
-    )
-
-async def set_who(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    await query.edit_message_text(
-        "Здесь будет выбор получателя."
-    )
 
 def main() -> None:
     token = os.getenv("BOT_TOKEN")
@@ -125,6 +126,7 @@ def main() -> None:
 
     logger.info("Bot is starting polling...")
     app.run_polling(drop_pending_updates=True)
+
 
 if __name__ == "__main__":
     main()
