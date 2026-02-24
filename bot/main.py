@@ -1,7 +1,7 @@
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (Application, CommandHandler, ContextTypes, CallbackQueryHandler, filters)
+from telegram.ext import (Application, CommandHandler, MessageHandler, ContextTypes, CallbackQueryHandler, filters)
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -86,15 +86,38 @@ async def receive_message_text(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=keyboard,
     )
 
+async def set_when(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    await query.edit_message_text(
+        "Здесь будет настройка даты и времени отправки."
+    )
+
+async def set_who(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    await query.edit_message_text(
+        "Здесь будет выбор получателя."
+    )
+
 def main() -> None:
     token = os.getenv("BOT_TOKEN")
     if not token:
         raise RuntimeError("BOT_TOKEN is not set")
 
     app = Application.builder().token(token).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(start_click, pattern=r"^start_click$"))
     app.add_handler(CommandHandler("ping", ping))
+
+    app.add_handler(CallbackQueryHandler(read_messages, pattern=r"^read_messages$"))
+    app.add_handler(CallbackQueryHandler(write_message, pattern=r"^write_message$"))
+    app.add_handler(CallbackQueryHandler(set_when, pattern=r"^set_when$"))
+    app.add_handler(CallbackQueryHandler(set_who, pattern=r"^set_who$"))
+
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_message_text))
 
     logger.info("Bot is starting polling...")
     app.run_polling(drop_pending_updates=True)
