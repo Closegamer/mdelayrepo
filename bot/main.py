@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 STATE_WAITING_MESSAGE = "waiting_message"
 DRAFT_MESSAGE_TEXT = "draft_message_text"
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     first_name = user.first_name or "<Ваше имя не распознано>"
@@ -49,6 +48,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
 
+async def show_read_messages(target_message_edit) -> None:
+    await target_message_edit("Ваши сообщения:\n\nСписок из базы...")
+
+async def show_write_message_prompt(context: ContextTypes.DEFAULT_TYPE, target_message_edit) -> None:
+    context.user_data[STATE_WAITING_MESSAGE] = True
+    context.user_data.pop(DRAFT_MESSAGE_TEXT, None)
+    await target_message_edit("Введите текст одним сообщением.")
 
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -58,16 +64,11 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info("callback data: %s", data)
 
     if data == "read_messages":
-        await query.edit_message_text(
-            "Ваши сообщения:\n\n"
-            "Список из базы..."
-        )
+        await show_read_messages(query.edit_message_text)
         return
 
     if data == "write_message":
-        context.user_data[STATE_WAITING_MESSAGE] = True
-        context.user_data.pop(DRAFT_MESSAGE_TEXT, None)
-        await query.edit_message_text("Введите текст одним сообщением.")
+        await show_write_message_prompt(context, query.edit_message_text)
         return
 
     if data == "set_when":
@@ -84,6 +85,12 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await query.edit_message_text(f"Неизвестная кнопка: {data}")
 
+async def read_messages_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await show_read_messages(update.message.reply_text)
+
+
+async def write_message_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await show_write_message_prompt(context, update.message.reply_text)
 
 async def receive_message_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.user_data.get(STATE_WAITING_MESSAGE):
@@ -109,7 +116,6 @@ async def receive_message_text(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=keyboard,
     )
 
-
 def main() -> None:
     token = os.getenv("BOT_TOKEN")
     if not token:
@@ -122,11 +128,13 @@ def main() -> None:
 
     app.add_handler(CallbackQueryHandler(on_button))
 
+    app.add_handler(MessageHandler(filters.Regex(r"^Прочитать сообщения$"), read_messages_text))
+    app.add_handler(MessageHandler(filters.Regex(r"^Написать сообщение$"), write_message_text))
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_message_text))
 
     logger.info("Bot is starting polling...")
     app.run_polling(drop_pending_updates=True)
-
 
 if __name__ == "__main__":
     main()
