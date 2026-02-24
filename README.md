@@ -28,6 +28,7 @@ docker compose up --build
 - `DEPLOY_USER` — пользователь деплоя (например `deploy`)
 - `DEPLOY_SSH_KEY` — приватный SSH ключ (содержимое файла ключа)
 - `DEPLOY_APP_DIR` — путь на сервере, например `/home/deploy/apps/mdelayrepo`
+- `GH_REPO_TOKEN` — GitHub token с правом чтения репозитория (`repo:read`)
 - `POSTGRES_DB`
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
