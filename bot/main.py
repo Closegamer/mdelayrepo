@@ -11,7 +11,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Бот работает. Команда /start получена.")
+    await update.message.reply_text("Здравствуйте! Вас приветствует бот mDelay! \nЕсли Вы собираетесь в опасное путешествие, Вы можете оставить сообщение, которое поможет Вас найти в случае непредвиденной ситуации и при отсутствии у Вас связи. \nКакое сообщение, кому и когда - решаете Вы. \nВы всегда сможете удалить свои сообщения, изменить даты отправки, изменить адресатов.")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
