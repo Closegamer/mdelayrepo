@@ -1,7 +1,7 @@
 import os
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     first_name = user.first_name or "<Ваше имя не распознано>"
-    username = user.username or "<ник не распознан>"
-    language_code = user.language_code or ""
+
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Начать общение с ботом", callback_data="start_click")]]
+    )
 
     await update.message.reply_text(f"Здравствуйте, {first_name}! Вас приветствует бот mDelay!\n\n"
                                     f"Если Вы собираетесь в опасное путешествие или в подозрительное место, Вы можете оставить сообщение, которое поможет Вас найти в случае непредвиденной ситуации и при отсутствии у Вас связи. \n\n"
@@ -25,6 +27,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
 
+async def start_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    user = query.from_user
+    first_name = user.first_name or ""
+    last_name = user.last_name or ""
+    username = user.username or ""
+    language_code = user.language_code or ""
+
 def main() -> None:
     token = os.getenv("BOT_TOKEN")
     if not token:
@@ -32,6 +44,7 @@ def main() -> None:
 
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(start_click, pattern=r"^start_click$"))
     app.add_handler(CommandHandler("ping", ping))
 
     logger.info("Bot is starting polling...")
