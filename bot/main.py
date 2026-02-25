@@ -1,8 +1,8 @@
 import os
 import re
 import logging
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -70,6 +70,14 @@ def flow_keyboard() -> ReplyKeyboardMarkup:
         [["Назад в главное меню"]],
         resize_keyboard=True,
         one_time_keyboard=False,
+    )
+
+def when_choice_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Прямо сейчас", callback_data="when_now")],
+            [InlineKeyboardButton("Дата и время", callback_data="when_picker")],
+        ]
     )
 
 def recipient_to_str(item: dict) -> str:
@@ -186,7 +194,7 @@ async def handle_idle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if text == "Добавить пересылкой сообщения":
         context.user_data[STATE] = STATE_WAIT_ADD_FORWARD
         await update.message.reply_text(
-            "Перешлите одно сообщение от нужного пользователя боту, и он добавится в Ваш список адресатов.",
+            "Перешлите одно сообщение от нужного пользователя боту, и пользователь добавится в список адресатов.",
             reply_markup=flow_keyboard(),
         )
         return True
@@ -208,10 +216,8 @@ async def handle_idle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         selected = [recipient_to_str(x) for x in book]
         context.user_data[DRAFT_RECIPIENTS_SELECTED] = selected
         context.user_data[STATE] = STATE_WAIT_WHEN
-        await update.message.reply_text(
-            "Выбраны все адресаты.\nВведите, когда отправить сообщение.",
-            reply_markup=flow_keyboard(),
-        )
+        await update.message.reply_text("Выбраны все адресаты.\nВведите, когда отправить сообщение.", reply_markup=flow_keyboard())
+        await update.message.reply_text("Выберите вариант:", reply_markup=when_choice_keyboard())
         return True
     if text == "Выбрать адресатов":
         book = recipients_list(context)
@@ -286,8 +292,33 @@ async def handle_wait_recipient_pick(update: Update, context: ContextTypes.DEFAU
         "Вы выбрали адресатов:\n"
         + selected_to_lines(selected)
         + "\n\nВведите, когда отправить сообщение.",
-        reply_markup=flow_keyboard(),
     )
+    await update.message.reply_text("Выберите вариант:", reply_markup=when_choice_keyboard())
+
+async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "when_now":
+        context.user_data[DRAFT_WHEN] = "Сразу"
+        context.user_data[STATE] = STATE_IDLE
+        message_text = context.user_data.get(DRAFT_MESSAGE_TEXT, "")
+        recipients = context.user_data.get(DRAFT_RECIPIENTS_SELECTED, [])
+        when_value = context.user_data.get(DRAFT_WHEN, "")
+        await query.edit_message_text("Выбрано: Сразу")
+        await query.message.reply_text(
+            "Черновик создан:\n\n"
+            f"Сообщение:\n{message_text}\n\n"
+            f"Адресаты:\n{selected_to_lines(recipients)}\n\n"
+            f"Когда отправить:\n{when_value}",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    if query.data == "when_picker":
+        context.user_data[STATE] = STATE_WAIT_WHEN
+        await query.edit_message_text("Пока введите дату и время текстом.")
+        return
 
 async def handle_wait_when(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
     if not text:
@@ -340,6 +371,7 @@ def main() -> None:
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
+    app.add_handler(CallbackQueryHandler(handle_callbacks))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     logger.info("Bot is starting polling...")
     app.run_polling(drop_pending_updates=True)
