@@ -13,12 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# CHECK1_HOURS = 5
-# CHECK2_HOURS = 2
-# CHECK3_HOURS = 1
-CHECK1_MINUTES = 1
-CHECK2_MINUTES = 1
-CHECK3_MINUTES = 1
+CHECK1_MINUTES = 300
+CHECK2_MINUTES = 120
+CHECK3_MINUTES = 60
 POLL_SECONDS = int(os.getenv("SCHEDULER_POLL_SECONDS", "60"))
 ALERT_CHAT_ID = os.getenv("ALERT_CHAT_ID", "@Closegamer")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -68,6 +65,7 @@ def send_check(row: tuple, check_no: int) -> bool:
         f"Проверка {check_no}/3.\n"
         f"Как дела?\n\n"
         f"Если всё хорошо, напишите фразу \"Я в порядке\"\n\n"
+        f"Если у Вас проблема, но Вы можете ответить, опишите тексом проблему.\n\n"
         f"Ваше сообщение:\n{message_text}"
     )
     try:
