@@ -38,6 +38,14 @@ def db_connect() -> psycopg.Connection:
         password=os.getenv("POSTGRES_PASSWORD"),
     )
 
+def ensure_schema() -> None:
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS check1_is_text BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS check2_is_text BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS check3_is_text BOOLEAN NOT NULL DEFAULT FALSE")
+        conn.commit()
+
 def format_dt_local(value) -> str:
     if not value:
         return "-"
@@ -243,6 +251,7 @@ def run_once() -> None:
 def main() -> None:
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN is not set")
+    ensure_schema()
     logger.info("Scheduler started with poll interval %ss", POLL_SECONDS)
     while True:
         try:

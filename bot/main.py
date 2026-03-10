@@ -89,6 +89,9 @@ def ensure_messages_table() -> None:
     with db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(create_sql)
+            cur.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS check1_is_text BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS check2_is_text BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS check3_is_text BOOLEAN NOT NULL DEFAULT FALSE")
         conn.commit()
 
 def save_message_to_db(user, text: str, sent_at: datetime) -> None:
