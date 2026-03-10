@@ -14,6 +14,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 BOT_TIMEZONE = os.getenv("BOT_TIMEZONE", "Europe/Moscow")
+ALERT_CHAT_ID = os.getenv("ALERT_CHAT_ID")
+ESCALATED_TEXT = "ESCALATED"
 try:
     APP_TZ = ZoneInfo(BOT_TIMEZONE)
 except Exception:
@@ -64,7 +66,8 @@ def start_text(first_name: str) -> str:
         f"Если Вы ответите на любой из запросов фразой \"Я в порядке\", бот прекратит следить за данным сообщением.\n\n"
         f"Если Вы ответите что-то другое, бот сразу передаст сообщение службе спасения.\n\n"
         f"Если Вы не ответите на все три запроса, бот передаст исходное сообщение службе спасения.\n\n "
-        f"Удачи Вам! Не теряйтесь - кому-то может быть без Вас грустно!"
+        f"Удачи Вам! Не теряйтесь - кому-то может быть без Вас грустно!\n\n"
+        f"ВНИМАНИЕ! БОТ РАБОТАЕТ В ТЕСТОВОМ РЕЖИМЕ! ЗАПРОСЫ ПРИХОДЯТ 1 РАЗ В МИНУТУ!"
     )
 
 def db_connect() -> psycopg.Connection:
@@ -174,6 +177,37 @@ def update_check_response(message_id: int, response_text: str, is_text: bool) ->
             updated = cur.rowcount > 0
         conn.commit()
     return updated
+
+def mark_message_escalated(message_id: int) -> None:
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE messages
+                SET check3_res = %s, check3_is_text = FALSE
+                WHERE id = %s
+                """,
+                (ESCALATED_TEXT, message_id),
+            )
+        conn.commit()
+
+async def send_emergency_now(context: ContextTypes.DEFAULT_TYPE, user, recorded: dict) -> None:
+    if not ALERT_CHAT_ID:
+        raise RuntimeError("ALERT_CHAT_ID is not set")
+    username_text = f"@{user.username}" if user and user.username else "-"
+    full_name = " ".join(x for x in [(user.first_name if user else ""), (user.last_name if user else "")] if x) or "Пользователь"
+    created_text = format_dt_local(recorded.get("timecreated"))
+    alert_text = (
+        "АВАРИЙНОЕ СООБЩЕНИЕ\n\n"
+        f"id сообщения: {recorded.get('id')}\n"
+        f"user id: {user.id if user else '-'}\n"
+        f"username: {username_text}\n"
+        f"имя: {full_name}\n\n"
+        f"Время создания сообщения: {created_text}\n\n"
+        f"Текст сообщения:\n{recorded.get('message', '')}\n\n"
+        f"Ответ пользователя:\n{recorded.get('response_text', '')}"
+    )
+    await context.bot.send_message(chat_id=ALERT_CHAT_ID, text=alert_text)
 
 def mark_latest_pending_as_ok(user_id: int) -> dict | None:
     with db_connect() as conn:
@@ -349,13 +383,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 recorded = mark_latest_pending_with_text(user.id, text)
                 if recorded:
                     created_text = format_dt_local(recorded["timecreated"])
-                    await update.message.reply_text(
-                        "Ответ на проверку сохранен.\n\n"
-                        f"id сообщения: {recorded['id']}\n"
-                        f"Время создания: {created_text}\n"
-                        f"Ваш ответ: {recorded['response_text']}",
-                        reply_markup=main_menu_keyboard(),
-                    )
+                    try:
+                        await send_emergency_now(context, user, recorded)
+                        mark_message_escalated(recorded["id"])
+                        await update.message.reply_text(
+                            "Ответ на проверку сохранен.\n"
+                            "Ответ отличается от \"Я в порядке\", аварийное сообщение отправлено сразу.\n\n"
+                            f"id сообщения: {recorded['id']}\n"
+                            f"Время создания: {created_text}\n"
+                            f"Ваш ответ: {recorded['response_text']}",
+                            reply_markup=main_menu_keyboard(),
+                        )
+                    except Exception:
+                        logger.exception("Failed to send immediate emergency alert")
+                        await update.message.reply_text(
+                            "Ответ на проверку сохранен, но аварийное сообщение пока не отправилось.",
+                            reply_markup=main_menu_keyboard(),
+                        )
                     return
             except Exception:
                 logger.exception("Failed to save custom check response")
