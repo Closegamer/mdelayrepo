@@ -2,6 +2,7 @@ import os
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import psycopg
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
@@ -12,6 +13,12 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+BOT_TIMEZONE = os.getenv("BOT_TIMEZONE", "Europe/Moscow")
+try:
+    APP_TZ = ZoneInfo(BOT_TIMEZONE)
+except Exception:
+    APP_TZ = timezone.utc
+    logger.warning("Invalid BOT_TIMEZONE '%s', fallback to UTC", BOT_TIMEZONE)
 
 STATE = "state"
 STATE_IDLE = "idle"
@@ -52,9 +59,11 @@ def start_text(first_name: str) -> str:
         f"Если Вы собираетесь в опасное путешествие или в подозрительное место, "
         f"Вы можете оставить сообщение, которое поможет Вас найти в случае непредвиденной ситуации "
         f"и при отсутствии у Вас связи.\n\n"
-        f"Через определенное время бот спросит, как у Вас дела. Если бот не получит ответа, он отправит Ваше сообщение в службу спасения.\n\n"
+        f"Через определенное время бот спросит, как у Вас дела.\n\n"
         f"В первый раз бот спросит Вас через 5 часов, во второй раз - еще через 2 часа, в третий раз - еще через 1 час.\n\n"
-        f"Если Вы ответите негативно на любой из запросов, бот сразу свяжется со службой спасения.\n\n"
+        f"Если Вы ответите на любой из запросов фразой \"Я в порядке\", бот прекратит следить за данным сообщением.\n\n"
+        f"Если Вы ответите что-то другое, бот сразу передаст сообщение службе спасения.\n\n"
+        f"Если Вы не ответите на все три запроса, бот передаст исходное сообщение службе спасения.\n\n "
         f"Удачи Вам! Не теряйтесь - кому-то может быть без Вас грустно!"
     )
 
@@ -66,6 +75,13 @@ def db_connect() -> psycopg.Connection:
         user=os.getenv("POSTGRES_USER"),
         password=os.getenv("POSTGRES_PASSWORD"),
     )
+
+def format_dt_local(value: datetime | None) -> str:
+    if not value:
+        return "-"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(APP_TZ).strftime("%d.%m.%Y %H:%M:%S")
 
 def ensure_messages_table() -> None:
     sql_path = Path(__file__).resolve().parent.parent / "sql" / "create_messages_table.sql"
@@ -119,7 +135,7 @@ def fetch_user_messages_from_db(user_id: int, limit: int = 20) -> list[dict]:
                 "id": message_id,
                 "text": message,
                 "sender": f"{sender_name} (username: {sender_username}, id: {user_id})",
-                "sent_at": timecreated.strftime("%d.%m.%Y %H:%M:%S"),
+                "sent_at": format_dt_local(timecreated),
             }
         )
     return result
@@ -134,6 +150,93 @@ def delete_message_from_db(user_id: int, message_id: int) -> bool:
             deleted = cur.rowcount > 0
         conn.commit()
     return deleted
+
+def update_check_response(message_id: int, response_text: str, is_text: bool) -> bool:
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE messages
+                SET
+                    check1_res = CASE WHEN check1_res = 'SENT' THEN %s ELSE check1_res END,
+                    check1_is_text = CASE WHEN check1_res = 'SENT' THEN %s ELSE check1_is_text END,
+                    check2_res = CASE WHEN check2_res = 'SENT' THEN %s ELSE check2_res END,
+                    check2_is_text = CASE WHEN check2_res = 'SENT' THEN %s ELSE check2_is_text END,
+                    check3_res = CASE WHEN check3_res = 'SENT' THEN %s ELSE check3_res END,
+                    check3_is_text = CASE WHEN check3_res = 'SENT' THEN %s ELSE check3_is_text END
+                WHERE id = %s
+                """,
+                (response_text, is_text, response_text, is_text, response_text, is_text, message_id),
+            )
+            updated = cur.rowcount > 0
+        conn.commit()
+    return updated
+
+def mark_latest_pending_as_ok(user_id: int) -> dict | None:
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, message, timecreated
+                FROM messages
+                WHERE userid = %s
+                  AND check1_time IS NOT NULL
+                  AND check3_res IS DISTINCT FROM 'Я в порядке'
+                  AND (
+                        check1_res = 'SENT'
+                        OR check2_res = 'SENT'
+                        OR check3_res = 'SENT'
+                  )
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        message_id, message_text, timecreated = row
+    changed = update_check_response(message_id, "Я в порядке", True)
+    if not changed:
+        return None
+    return {
+        "id": message_id,
+        "message": message_text,
+        "timecreated": timecreated,
+    }
+
+def mark_latest_pending_with_text(user_id: int, response_text: str) -> dict | None:
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, message, timecreated
+                FROM messages
+                WHERE userid = %s
+                  AND check1_time IS NOT NULL
+                  AND (
+                        check1_res = 'SENT'
+                        OR check2_res = 'SENT'
+                        OR check3_res = 'SENT'
+                  )
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        message_id, message_text, timecreated = row
+    changed = update_check_response(message_id, response_text, True)
+    if not changed:
+        return None
+    return {
+        "id": message_id,
+        "message": message_text,
+        "timecreated": timecreated,
+        "response_text": response_text,
+    }
 
 def format_message_item(idx: int, item: dict) -> str:
     return (
@@ -227,16 +330,58 @@ async def handle_wait_message_text(update: Update, context: ContextTypes.DEFAULT
         "Сообщение сохранено.\n\n"
         f"Текст: {value}\n"
         f"Отправитель: {sender}\n"
-        f"Время отправки: {sent_at.strftime('%d.%m.%Y %H:%M:%S')}",
+        f"Время отправки: {format_dt_local(sent_at)}",
         reply_markup=main_menu_keyboard(),
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ensure_defaults(context)
     text = (update.message.text or "").strip()
+    state = context.user_data.get(STATE, STATE_IDLE)
+
+    if state == STATE_IDLE and text not in ("Я в порядке", "Написать новое сообщение", "Прочитать свои сообщения", "Назад в главное меню"):
+        user = update.effective_user
+        if user:
+            try:
+                recorded = mark_latest_pending_with_text(user.id, text)
+                if recorded:
+                    created_text = format_dt_local(recorded["timecreated"])
+                    await update.message.reply_text(
+                        "Ответ на проверку сохранен.\n\n"
+                        f"id сообщения: {recorded['id']}\n"
+                        f"Время создания: {created_text}\n"
+                        f"Ваш ответ: {recorded['response_text']}",
+                        reply_markup=main_menu_keyboard(),
+                    )
+                    return
+            except Exception:
+                logger.exception("Failed to save custom check response")
+
+    if text == "Я в порядке" or text == "Я в порядке.":
+        user = update.effective_user
+        if not user:
+            await update.message.reply_text("Не удалось определить пользователя.", reply_markup=main_menu_keyboard())
+            return
+        try:
+            stopped = mark_latest_pending_as_ok(user.id)
+            if stopped:
+                created_text = format_dt_local(stopped["timecreated"])
+                await update.message.reply_text(
+                    "Принято. Вы в порядке.\n"
+                    "Бот прекращает следить за этим сообщением.\n\n"
+                    f"id сообщения: {stopped['id']}\n"
+                    f"Время создания: {created_text}\n"
+                    "Сообщение остается в базе.",
+                    reply_markup=main_menu_keyboard(),
+                )
+            else:
+                await update.message.reply_text("Нет активной проверки для подтверждения.", reply_markup=main_menu_keyboard())
+        except Exception:
+            logger.exception("Failed to mark check response from text")
+            await update.message.reply_text("Не удалось обработать ответ.", reply_markup=main_menu_keyboard())
+        return
     if await handle_idle_command(update, context, text):
         return
-    state = context.user_data.get(STATE, STATE_IDLE)
     if state == STATE_WAIT_MESSAGE_TEXT:
         await handle_wait_message_text(update, context, text)
         return

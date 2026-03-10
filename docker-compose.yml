@@ -32,5 +32,20 @@ services:
     volumes:
       - .:/app
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mdelayrepo-scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m scheduler.main
+    volumes:
+      - .:/app
+
 volumes:
   postgres_data:
