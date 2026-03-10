@@ -13,9 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CHECK1_MINUTES = 300
-CHECK2_MINUTES = 120
-CHECK3_MINUTES = 60
+CHECK1_MINUTES = 1
+CHECK2_MINUTES = 1
+CHECK3_MINUTES = 1
 POLL_SECONDS = int(os.getenv("SCHEDULER_POLL_SECONDS", "60"))
 ALERT_CHAT_ID = os.getenv("ALERT_CHAT_ID", "@Closegamer")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
