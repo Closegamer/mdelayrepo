@@ -19,3 +19,4 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_userid ON messages(userid);
 CREATE INDEX IF NOT EXISTS idx_messages_timecreated ON messages(timecreated);
+ 
