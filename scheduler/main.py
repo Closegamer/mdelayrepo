@@ -70,11 +70,11 @@ def send_telegram_message(chat_id, text: str) -> None:
 def send_check(row: tuple, check_no: int) -> bool:
     message_id, user_id, username, firstname, lastname, message_text = row
     text = (
-        f"Проверка {check_no}/3.\n"
-        f"Как дела?\n\n"
+        f"Проверка {check_no}/3.\n\n"
+        f"Как у Вас дела?\n\n"
         f"Если всё хорошо, напишите фразу \"Я в порядке\"\n\n"
-        f"Если у Вас проблема, но Вы можете ответить, опишите тексом проблему.\n\n"
-        f"Ваше сообщение:\n{message_text}"
+        f"Если у Вас проблема, но Вы можете ответить, - опишите проблему текстом.\n\n"
+        f"Ваше исходное сообщение:\n{message_text}"
     )
     try:
         send_telegram_message(chat_id=user_id, text=text)
@@ -90,10 +90,10 @@ def send_emergency(row: tuple) -> bool:
     created_text = format_dt_local(timecreated)
     alert_text = (
         "АВАРИЙНОЕ СООБЩЕНИЕ\n\n"
-        f"id сообщения: {message_id}\n"
-        f"user id: {user_id}\n"
-        f"username: {username_text}\n"
-        f"имя: {user_title}\n\n"
+        f"ID сообщения: {message_id}\n"
+        f"User id: {user_id}\n"
+        f"Username: {username_text}\n"
+        f"Имя: {user_title}\n\n"
         f"Время создания сообщения: {created_text}\n\n"
         f"Текст сообщения:\n{message_text}"
     )

@@ -26,7 +26,6 @@ STATE = "state"
 STATE_IDLE = "idle"
 STATE_WAIT_MESSAGE_TEXT = "wait_message_text"
 
-
 def ensure_defaults(context: ContextTypes.DEFAULT_TYPE) -> None:
     if STATE not in context.user_data:
         context.user_data[STATE] = STATE_IDLE
@@ -61,12 +60,12 @@ def start_text(first_name: str) -> str:
         f"Здравствуйте, {first_name}! Вас приветствует бот mDelay!\n\n"
         f"Если Вы собираетесь в опасное путешествие или в подозрительное место, "
         f"Вы можете оставить сообщение, которое поможет Вас найти в случае непредвиденной ситуации "
-        f"и при отсутствии у Вас связи.\n\n"
+        f"или при отсутствии у Вас связи.\n\n"
         f"Через определенное время бот спросит, как у Вас дела.\n\n"
-        f"В первый раз бот спросит Вас через 5 часов, во второй раз - еще через 2 часа, в третий раз - еще через 1 час.\n\n"
         f"Если Вы ответите на любой из запросов фразой \"Я в порядке\", бот прекратит следить за данным сообщением.\n\n"
         f"Если Вы ответите что-то другое, бот сразу передаст сообщение службе спасения.\n\n"
         f"Если Вы не ответите на все три запроса, бот передаст исходное сообщение службе спасения.\n\n "
+        f"В первый раз бот спросит Вас через 5 часов, во второй раз - еще через 2 часа, в третий раз - еще через 1 час.\n\n"
         f"Удачи Вам! Не теряйтесь - кому-то может быть без Вас грустно!\n\n"
         f"ВНИМАНИЕ! БОТ РАБОТАЕТ В ТЕСТОВОМ РЕЖИМЕ! ЗАПРОСЫ ПРИХОДЯТ 1 РАЗ В МИНУТУ!"
     )
@@ -119,7 +118,7 @@ def save_message_to_db(user, text: str, sent_at: datetime) -> None:
             )
         conn.commit()
 
-def fetch_user_messages_from_db(user_id: int, limit: int = 20) -> list[dict]:
+def fetch_user_messages_from_db(user_id: int) -> list[dict]:
     with db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -128,9 +127,8 @@ def fetch_user_messages_from_db(user_id: int, limit: int = 20) -> list[dict]:
                 FROM messages
                 WHERE userid = %s
                 ORDER BY id DESC
-                LIMIT %s
                 """,
-                (user_id, limit),
+                (user_id,),
             )
             rows = cur.fetchall()
     result = []
@@ -200,10 +198,10 @@ async def send_emergency_now(context: ContextTypes.DEFAULT_TYPE, user, recorded:
     created_text = format_dt_local(recorded.get("timecreated"))
     alert_text = (
         "АВАРИЙНОЕ СООБЩЕНИЕ\n\n"
-        f"id сообщения: {recorded.get('id')}\n"
-        f"user id: {user.id if user else '-'}\n"
-        f"username: {username_text}\n"
-        f"имя: {full_name}\n\n"
+        f"ID сообщения: {recorded.get('id')}\n"
+        f"User id: {user.id if user else '-'}\n"
+        f"Username: {username_text}\n"
+        f"Имя: {full_name}\n\n"
         f"Время создания сообщения: {created_text}\n\n"
         f"Текст сообщения:\n{recorded.get('message', '')}\n\n"
         f"Ответ пользователя:\n{recorded.get('response_text', '')}"
@@ -389,7 +387,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         mark_message_escalated(recorded["id"])
                         await update.message.reply_text(
                             "Ответ на проверку сохранен.\n"
-                            "Ответ отличается от \"Я в порядке\", аварийное сообщение отправлено сразу.\n\n"
+                            "Ответ отличается от \"Я в порядке\", аварийное сообщение отправлено в службу спасения.\n\n"
                             f"id сообщения: {recorded['id']}\n"
                             f"Время создания: {created_text}\n"
                             f"Ваш ответ: {recorded['response_text']}",
@@ -419,7 +417,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "Бот прекращает следить за этим сообщением.\n\n"
                     f"id сообщения: {stopped['id']}\n"
                     f"Время создания: {created_text}\n"
-                    "Сообщение остается в базе.",
+                    "Сообщение остается в базе на 30 дней, на всякий случай.",
                     reply_markup=main_menu_keyboard(),
                 )
             else:
